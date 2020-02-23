@@ -51,8 +51,3 @@ class CTFBase:
         for a in deepcopy(self.__dict__):
             if a != "_ctfd" and a not in API_ROUTES:
                 del self.__dict__[a]
-
-    # def _reset(self, *attrs):
-    #     for a in attrs:
-    #         if a in self.__dict__:
-    #             del self.__dict__[a]

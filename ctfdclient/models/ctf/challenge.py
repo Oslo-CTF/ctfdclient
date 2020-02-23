@@ -1,18 +1,65 @@
 #!/usr/bin/env python
 
+import json
+import magic
+import logging
+
+from requests_toolbelt.multipart.encoder import MultipartEncoder
+
+mime = magic.Magic(mime=True)
+log = logging.getLogger(__name__)
+
 
 class Challenge:
     def __init__(self, _data):
         self._data = _data
 
-        self.id = self._data["id"]
-        self.category = self._data["category"]
-        self.name = self._data["name"]
-        self.script = self._data["script"]
-        self.tags = self._data["tags"]
-        self.template = self._data["template"]
-        self.type = self._data["type"]
-        self.value = self._data["value"]
+        self.id = self._data.get("id")
+        self.category = self._data.get("category", "")
+        self.name = self._data.get("name", "")
+        self.script = self._data.get("script", "")
+        self.tags = self._data.get("tags", "")
+        self.template = self._data.get("template", "")
+        self.type = self._data.get("type", "")
+        self.value = self._data.get("value", 0)
+
+    def __str__(self):
+        return self._data
+
+    def set_flag(self, ctfd, flag, _type="static"):
+        data = {
+            "challenge": self.id,
+            "content": flag,
+            "type": _type
+        }
+
+        headers = {
+            "CSRF-Token": ctfd.nonce("admin/challenges/new"),
+            "Content-Type": "application/json"
+        }
+
+        response = ctfd.post("flags", data=json.dumps(data), allow_redirects=True, headers=headers)
+
+        return ("success" in response and response["success"]) and response["data"] or None
+
+    def upload_file(self, ctfd, filepath, filename):
+        mp_encoder = MultipartEncoder(
+            fields={
+                # plain file object, no filename or mime type produces a
+                # Content-Disposition header with just the part name
+                "file": (filename, open(filepath, "rb"), mime.from_file(filepath)),
+            }
+        )
+
+        headers = {
+            #"CSRF-Token": ctfd.nonce(f"admin/challenges/{self.id}"),
+            "Referer": f"{ctfd.api}admin/challenges/{self.id}",
+            "Content-Type": mp_encoder.content_type
+        }
+
+        response = ctfd.post("files", data=mp_encoder, allow_redirects=True, headers=headers)
+
+        return ("success" in response and response["success"]) and response["data"] or None
 
     @property
     def category(self):

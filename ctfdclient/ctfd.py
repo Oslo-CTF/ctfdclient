@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import re
+import json
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -50,8 +52,8 @@ class CTFd:
         self.login()
 
         # Models
-        self.scoreboard = models.Scoreboard(self, None)
         self.challenges = models.Challenges(self, None)
+        self.scoreboard = models.Scoreboard(self, None)
         self.teams = models.Teams(self, None)
         self.players = models.Players(self, None)
         self.submissions = models.Submissions(self, None)
@@ -62,17 +64,22 @@ class CTFd:
 
     def _request(self, method, url, **kwargs):
         """ Base function to make requests to CTFd REST API """
-        log.debug("{} {}".format(method, url))
-        return self._check_error(self.session.request(method, url, **kwargs))
+        log.debug("{} {} {}".format(method, url, kwargs))
+        response = self.session.request(method, url, **kwargs)
+
+        return self._check_error(response)
 
     def _api_request(self, method, url, **kwargs):
         """ Base function to make requests to CTFd REST API """
         url = urljoin(self.api, url)
-        log.debug("API Request: {} {}".format(method, url))
+        log.debug("API Request: {} {} {}".format(method, url, kwargs))
+        
         return self._request(method, url, **kwargs).json()
 
     def _check_error(self, resp):
-        log.debug("Status Code: %s", resp.status_code)
+        if resp.status_code > 299:
+            log.debug("Status Code: %s : %s", resp.status_code, resp._content)
+        
         return resp
 
     def get(self, uri):
@@ -93,24 +100,33 @@ class CTFd:
 
     def login(self):
         log.info("Attempting login...")
-        loginParams = {"name": self.user, "password": self.pw, "nonce": self.nonce}
+        loginParams = {"name": self.user, "password": self.pw, "nonce": self.nonce("login")}
         loginUrl = urljoin(self.domain, "login")
         resp = self._request("POST", loginUrl, data=loginParams, allow_redirects=True)
+
         for r in resp.history:
             log.debug("Login Response: {}".format(r.headers))
+
             if "Set-Cookie" in r.headers:
                 self.authed = True
                 log.debug("Cookie Received: {}".format(r.headers["Set-Cookie"]))
+
         if not self.authed:
             raise Exception("Error logging into CTFd")
 
-    @property
-    def nonce(self):
-        log.debug("Retreiving nonce for login.")
-        resp = self._request("GET", urljoin(self.domain, "login"))
+    def nonce(self, path):
+        log.debug("Retreiving nonce.")
+        resp = self._request("GET", urljoin(self.domain, path))
         soup = BeautifulSoup(resp.text, "lxml")
-        # self._nonce = soup.find('input')
-        self._nonce = soup.find(attrs={"name": "nonce"})["value"]
+
+        try:
+            #self._nonce = soup.find(attrs={"name": "csrfNonce"})["value"]
+            head_script = soup.find("head").find("script").text
+            self._nonce = re.findall(r"'csrfNonce': \"(\w+)\"", head_script)[0]
+        except:
+            log.debug("No nonce found.")
+            return None
+
         return self._nonce
 
     """
